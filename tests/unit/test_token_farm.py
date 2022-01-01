@@ -1,31 +1,16 @@
-from brownie import network
+from brownie import network, exceptions, MockERC20
 from scripts.helpful_script import (
     LOCAL_BLOCKCHAIN_ENVIRONMENTS,
     INITIAL_PRICE_FEED_VALUE,
     get_account,
     get_contract,
+    DECIMALS,
 )
 from scripts import deploy
-from scripts.deploy import deploy_token_farm_dapp_token
+from scripts.deploy import deploy_token_farm_dapp_token, KEPT_BALANCE
 import pytest
-from brownie import exceptions
 from web3 import Web3
-
-
-@pytest.fixture
-def ACTIVE_NETWORK():
-
-    return network.show_active()
-
-
-@pytest.fixture
-def account():
-    return get_account()
-
-
-@pytest.fixture
-def amount_staked():
-    return Web3.toWei(1, "ether")
+from tests.conftest import ACTIVE_NETWORK, account, amount_staked, random_erc20
 
 
 def test_set_price_feed_contract(ACTIVE_NETWORK, account):
@@ -110,3 +95,77 @@ def test_issue_tokens(ACTIVE_NETWORK, account, amount_staked):
         dapp_token.balanceOf(account.address)
         == starting_balance + INITIAL_PRICE_FEED_VALUE
     )
+
+
+def test_get_user_total_value_with_different_tokens(
+    ACTIVE_NETWORK, account, amount_staked, random_erc20
+):
+    # Arrange
+    token_farm, dapp_token = test_stake_tokens(ACTIVE_NETWORK, account, amount_staked)
+    token_farm.addAllowedTokens(random_erc20.address, {"from": account})
+    token_farm.setPriceFeedContract(
+        random_erc20.address, get_contract("eth_usd_price_feed"), {"from": account}
+    )
+    random_erc20_stake_amount = amount_staked * 2
+    random_erc20.approve(
+        token_farm.address, random_erc20_stake_amount, {"from": account}
+    )
+    token_farm.stakeTokens(
+        random_erc20_stake_amount, random_erc20.address, {"from": account}
+    )
+    # Assert
+    total_value = token_farm.getUserTotalValue(account.address)
+    assert total_value == INITIAL_PRICE_FEED_VALUE * 3
+
+
+def test_get_token_value(ACTIVE_NETWORK):
+    # Arrange
+    if ACTIVE_NETWORK not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing!")
+    token_farm, dapp_token = deploy_token_farm_dapp_token()
+    # Act / Assert
+    assert token_farm.getTokenValue(dapp_token.address) == (
+        INITIAL_PRICE_FEED_VALUE,
+        DECIMALS,
+    )
+
+
+def test_get_token_value(ACTIVE_NETWORK):
+    # Arrange
+    if ACTIVE_NETWORK not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing!")
+    token_farm, dapp_token = deploy_token_farm_dapp_token()
+    # Act / Assert
+    assert token_farm.getTokenValue(dapp_token.address) == (
+        INITIAL_PRICE_FEED_VALUE,
+        DECIMALS,
+    )
+
+
+def test_unstake_tokens(ACTIVE_NETWORK, amount_staked):
+    # Arrange
+    if ACTIVE_NETWORK not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing!")
+    account = get_account()
+    token_farm, dapp_token = test_stake_tokens(ACTIVE_NETWORK, account, amount_staked)
+    # Act
+    token_farm.unstakeTokens(dapp_token.address, {"from": account})
+    assert dapp_token.balanceOf(account.address) == KEPT_BALANCE
+    assert token_farm.stakingBalance(dapp_token.address, account.address) == 0
+    assert token_farm.uniqueTokensStaked(account.address) == 0
+
+
+def test_add_allowed_tokens(ACTIVE_NETWORK):
+    # Arrange
+    if ACTIVE_NETWORK not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing!")
+    deploy.ACTIVE_NETWORK = ACTIVE_NETWORK
+    account = get_account()
+    non_owner = get_account(index=1)
+    token_farm, dapp_token = deploy_token_farm_dapp_token()
+    # Act
+    token_farm.addAllowedTokens(dapp_token.address, {"from": account})
+    # Assert
+    assert token_farm.allowedTokens(0) == dapp_token.address
+    # with pytest.raises(exceptions.VirtualMachineError):
+    #     token_farm.addAllowedTokens(dapp_token.address, {"from": non_owner})
