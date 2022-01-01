@@ -8,6 +8,8 @@ from brownie import (
     VRFCoordinatorMock,
     LinkToken,
     interface,
+    MockDAI,
+    MockWETH,
 )
 from web3 import Web3
 
@@ -17,8 +19,8 @@ FORKED_LOCAL_ENVIRONMENTS = ["mainnet-fork", "mainnet-fork-dev"]
 LOCAL_BLOCKCHAIN_ENVIRONMENTS = ["development", "ganache-local", "ganache-local-2"]
 
 
-DECIMALS = 8
-STARTING_PRICE = 2e8
+DECIMALS = 18
+INITIAL_PRICE_FEED_VALUE = 2e21
 BREED_MAPPING = ["PUG", "SHIBA_INU", "ST_BERNARD"]
 
 
@@ -39,8 +41,11 @@ def get_account(index=None, account_id=None):
 
 contract_to_mock = {
     "eth_usd_price_feed": MockV3Aggregator,
+    "dai_usd_price_feed": MockV3Aggregator,
     "vrf_coordinator": VRFCoordinatorMock,
     "link_token": LinkToken,
+    "fau_token": MockDAI,
+    "weth_token": MockWETH,
 }
 
 
@@ -72,21 +77,26 @@ def get_contract(contract_name):
     return contract
 
 
-def deploy_mocks():
+def deploy_mocks(decimals=DECIMALS, initial_value=INITIAL_PRICE_FEED_VALUE):
     """
-    Deploy mock contract
+    Use this script if you want to deploy mocks to a testnet
     """
-    account = get_account()
     print(f"The active network is {network.show_active()}")
-    print("Deploying Mock...")
-
-    MockV3Aggregator.deploy(
-        DECIMALS, Web3.toWei(STARTING_PRICE, "ether"), {"from": account}
-    )
+    print("Deploying Mocks...")
+    account = get_account()
+    print("Deploying Mock Link Token...")
     link_token = LinkToken.deploy({"from": account})
-
-    VRFCoordinatorMock.deploy(link_token.address, {"from": account})
-    print("Mocks deployed")
+    print("Deploying Mock Price Feed...")
+    mock_price_feed = MockV3Aggregator.deploy(
+        decimals, initial_value, {"from": account}
+    )
+    print(f"Deployed to {mock_price_feed.address}")
+    print("Deploying Mock DAI...")
+    dai_token = MockDAI.deploy({"from": account})
+    print(f"Deployed to {dai_token.address}")
+    print("Deploying Mock WETH")
+    weth_token = MockWETH.deploy({"from": account})
+    print(f"Deployed to {weth_token.address}")
 
 
 def fund_contract_with_link(
